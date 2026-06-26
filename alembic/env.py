@@ -8,6 +8,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
+import backend.models
 from alembic import context
 
 # Import app settings + Base
@@ -17,11 +18,15 @@ from backend.core.database import Base
 # Import all ORM models here so Alembic detects them
 # (we'll add: from backend.models import user, ticket, etc. in later milestones)
 
+
 # Alembic Config object
 config = context.config
 
 # Inject DB URL from settings
-config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
+config.set_main_option(
+    "sqlalchemy.url",
+    str(settings.DATABASE_URL).replace("%", "%%"),
+)
 
 # Set up logging
 if config.config_file_name is not None:

@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+# ⭐ CRITICAL: Force-import all models so SQLAlchemy registers them
+import backend.models  # noqa: F401
 from backend.api.v1.router import api_router
 from backend.core.config import settings
 from backend.core.logging_config import setup_logging

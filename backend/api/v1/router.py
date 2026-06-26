@@ -6,12 +6,13 @@ As we add modules (auth, tickets, etc.), we register them here.
 
 from fastapi import APIRouter
 
-from backend.api.v1.endpoints import health
+from backend.api.v1.endpoints import auth, health
 
 api_router = APIRouter()
 
 # Register sub-routers
 api_router.include_router(health.router)
+api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 
 # Future routers (added in later milestones):
 # api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
