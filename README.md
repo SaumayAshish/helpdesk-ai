@@ -80,7 +80,7 @@ pip install -r requirements.txt
 - [x] **Milestone 0** — Project foundation & folder structure
 - [x] **Milestone 1** — Database design (ER diagram + schema)
 - [x] **Milestone 2** — FastAPI backend skeleton
-- [ ] **Milestone 3** — JWT authentication & role-based access
+- [x] **Milestone 3** — JWT authentication & role-based access
 - [ ] **Milestone 4** — Ticket CRUD APIs
 - [ ] **Milestone 5** — ML models (priority, dept, SLA)
 - [ ] **Milestone 6** — ML integration with APIs

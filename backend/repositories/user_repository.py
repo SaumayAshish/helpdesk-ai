@@ -2,7 +2,7 @@
 User-specific repository operations.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,5 +37,5 @@ class UserRepository(BaseRepository[User]):
         return self.db.scalars(stmt).first()
 
     def update_last_login(self, user: User) -> None:
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(timezone.utc)
         self.db.flush()

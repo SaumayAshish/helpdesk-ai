@@ -17,7 +17,7 @@ INSERT INTO users (
 ) VALUES (
     'admin@helpdesk.local',
     'admin',
-    '\$2b$12$LQv3c1yqBwEHxv6mZJ8Z8O7P8N5dQEzKYpJ9BqEcMmqRxQ0vSXmFu',  -- bcrypt of "Admin@12345"
+    '$2b$12$18Oty7E5d2z9dVElebOsXOgzLiNcBMiBjdy5DN/kqSjq3OjTKgXQu',  -- bcrypt of "Admin@12345" (cost factor 12, generated via hash_password())
     'System Administrator',
     (SELECT id FROM roles WHERE name = 'admin'),
     (SELECT id FROM departments WHERE name = 'IT Support'),
