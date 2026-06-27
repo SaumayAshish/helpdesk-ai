@@ -143,6 +143,23 @@ class AuthService:
         return self.issue_tokens(user)
 
     # =====================================================
+    # Change password
+    # =====================================================
+    def change_password(self, user: User, current_password: str, new_password: str) -> None:
+        """
+        Verify the current password and update to the new one.
+
+        Raises:
+            UnauthorizedException: If current_password does not match.
+        """
+        if not verify_password(current_password, user.password_hash):
+            raise UnauthorizedException("Current password is incorrect")
+
+        user.password_hash = hash_password(new_password)
+        self.user_repo.commit()
+        logger.info(f"Password changed for user_id={user.id}")
+
+    # =====================================================
     # Get current user from access token
     # =====================================================
     def get_user_from_token(self, token: str) -> User:

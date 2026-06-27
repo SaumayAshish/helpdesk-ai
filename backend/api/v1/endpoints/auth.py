@@ -4,12 +4,8 @@ Authentication endpoints: register, login, refresh, me, change-password.
 
 from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
 
 from backend.api.deps import get_auth_service, get_current_active_user
-from backend.core.database import get_db
-from backend.core.exceptions import UnauthorizedException
-from backend.core.security import hash_password, verify_password
 from backend.models.user import User
 from backend.schemas.token import RefreshTokenRequest, TokenResponse
 from backend.schemas.user import (
@@ -107,11 +103,11 @@ def get_me(
 def change_password(
     payload: PasswordChangeRequest,
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ) -> None:
-    if not verify_password(payload.current_password, current_user.password_hash):
-        raise UnauthorizedException("Current password is incorrect")
-
-    current_user.password_hash = hash_password(payload.new_password)
-    db.commit()
+    auth_service.change_password(
+        current_user,
+        payload.current_password,
+        payload.new_password,
+    )
     return None
