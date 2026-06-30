@@ -18,6 +18,7 @@ from backend.models.ticket import Ticket, TicketPriority, TicketStatus
 from backend.models.user import User
 from backend.repositories.ticket_repository import TicketRepository
 from backend.schemas.ticket import TicketCreate, TicketUpdate
+from ml.service import ml_service
 
 
 class TicketService:
@@ -108,6 +109,44 @@ class TicketService:
         )
 
         self.ticket_repo.add(ticket)  # flush() inside add() gives us ticket.id
+        ticket.ticket_number = f"TKT-{datetime.now().year}-{ticket.id:05d}"
+
+        # -----------------------------------------------
+        # ML Predictions — run after ticket_number is set
+        # -----------------------------------------------
+        try:
+            prediction = ml_service.predict(data.title, data.description)
+
+            ticket.predicted_priority_score = prediction.priority_score
+            ticket.predicted_sla_breach_prob = prediction.sla_breach_prob
+            ticket.predicted_resolution_hours = prediction.resolution_hours
+
+            # Auto-assign department if reporter didn't specify one
+            if ticket.department_id is None and prediction.department_name:
+                dept = (
+                    self.db.query(Department)
+                    .filter(Department.name == prediction.department_name)
+                    .first()
+                )
+                if dept and dept.is_active:
+                    ticket.department_id = dept.id
+                    logger.info(
+                        f"ML auto-assigned department: '{dept.name}' " f"for ticket_id={ticket.id}"
+                    )
+
+        except Exception as e:
+            # Never let ML failure block ticket creation
+            logger.error(f"ML prediction failed for ticket_id={ticket.id}: {e}")
+
+        self.ticket_repo.commit()
+        self.db.refresh(ticket)
+
+        logger.info(
+            f"Ticket created: id={ticket.id} "
+            f"reporter_id={reporter.id} "
+            f"priority={ticket.priority}"
+        )
+        return ticket
         ticket.ticket_number = f"TKT-{datetime.now().year}-{ticket.id:05d}"
         self.ticket_repo.commit()
         self.db.refresh(ticket)

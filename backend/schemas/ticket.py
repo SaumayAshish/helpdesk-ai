@@ -6,6 +6,7 @@ Response schemas — shape what the API returns.
 """
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -122,6 +123,7 @@ class TicketResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    ticket_number: str
     title: str
     description: str
     status: TicketStatus
@@ -133,9 +135,13 @@ class TicketResponse(BaseModel):
     updated_at: datetime
     resolved_at: datetime | None
     sla_due_at: datetime | None
-    ticket_number: str
     closed_at: datetime | None
     sla_breached: bool
+
+    # ML prediction fields
+    predicted_priority_score: Decimal | None = None
+    predicted_sla_breach_prob: Decimal | None = None
+    predicted_resolution_hours: Decimal | None = None
 
 
 class TicketSummary(BaseModel):
