@@ -29,6 +29,7 @@ class Department(Base):
     )
 
     users: Mapped[list["User"]] = relationship("User", back_populates="department")
+    tickets = relationship("Ticket", back_populates="department")
 
     def __repr__(self) -> str:
         return f"<Department id={self.id} name={self.name}>"

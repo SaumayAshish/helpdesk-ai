@@ -19,7 +19,7 @@ from backend.core.config import settings
 
 
 # =====================================================
-# Declarative Base — all ORM models inherit from this
+# Declarative Base
 # =====================================================
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy ORM models."""

@@ -15,6 +15,8 @@ from backend.core.database import get_db
 from backend.core.exceptions import ForbiddenException
 from backend.models.user import User
 from backend.services.auth_service import AuthService
+from backend.services.comment_service import CommentService
+from backend.services.ticket_service import TicketService
 
 # OAuth2 scheme: extracts "Bearer <token>" from Authorization header
 # tokenUrl is where Swagger UI's "Authorize" button POSTs credentials
@@ -76,3 +78,13 @@ def require_roles(*allowed_roles: str) -> Callable[[User], User]:
         return user
 
     return _role_checker
+
+
+def get_ticket_service(db: Session = Depends(get_db)) -> TicketService:
+    """Inject a TicketService bound to the request's DB session."""
+    return TicketService(db)
+
+
+def get_comment_service(db: Session = Depends(get_db)) -> CommentService:
+    """Inject a CommentService bound to the request's DB session."""
+    return CommentService(db)

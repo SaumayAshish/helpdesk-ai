@@ -46,6 +46,13 @@ class User(Base):
         "Department", back_populates="users", lazy="joined"
     )
 
+    reported_tickets = relationship(
+        "Ticket", foreign_keys="Ticket.created_by_id", back_populates="reporter"
+    )
+    assigned_tickets = relationship(
+        "Ticket", foreign_keys="Ticket.assigned_to_id", back_populates="assignee"
+    )
+
     def __repr__(self) -> str:
         role_name = self.role.name if self.role else None
         return f"<User id={self.id} email={self.email} role={role_name}>"
