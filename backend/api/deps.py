@@ -17,6 +17,7 @@ from backend.models.user import User
 from backend.services.auth_service import AuthService
 from backend.services.comment_service import CommentService
 from backend.services.ticket_service import TicketService
+from backend.services.user_service import UserService
 
 # OAuth2 scheme: extracts "Bearer <token>" from Authorization header
 # tokenUrl is where Swagger UI's "Authorize" button POSTs credentials
@@ -88,3 +89,8 @@ def get_ticket_service(db: Session = Depends(get_db)) -> TicketService:
 def get_comment_service(db: Session = Depends(get_db)) -> CommentService:
     """Inject a CommentService bound to the request's DB session."""
     return CommentService(db)
+
+
+def get_user_service(db: Session = Depends(get_db)) -> UserService:
+    """Inject a UserService bound to the request's DB session."""
+    return UserService(db)
