@@ -12,10 +12,11 @@ exactly, so the UI never offers an action the API would reject:
   - Close   : engineer/admin only, from RESOLVED
   - Reopen  : reporter (own ticket) or engineer/admin, from CLOSED or RESOLVED
 
-NOTE: "Assign to engineer" is intentionally NOT in this page. The API
-(POST /tickets/{id}/assign) exists, but there is no endpoint yet to list
-engineer users to populate a picker. Assignment is deferred to the admin
-dashboard (Milestone 8), where a user-management endpoint belongs anyway.
+Assignment: engineers/admins can (re)assign a ticket to any active engineer,
+via the picker populated by GET /users?role=engineer (added in Step 8.1 —
+this page previously had no way to list engineer IDs, so this was deferred).
+The backend places no status restriction on assign(), so neither does this
+picker; it's simply gated to staff roles, matching TicketService exactly.
 """
 
 import sys
@@ -133,11 +134,58 @@ if score is not None or sla_prob is not None or res_hours is not None:
     p3.metric("Est. Resolution", f"{float(res_hours):.1f} hrs" if res_hours is not None else "—")
     st.divider()
 
+is_staff = role in ("engineer", "admin")
+is_reporter = ticket["reporter"]["id"] == user.get("id")
+
+# ── Assignment ──────────────────────────────────────────────────────────────
+# Staff can (re)assign to any active engineer. No status gate here because
+# TicketService.assign_ticket() itself has none — it's valid at any point
+# in the lifecycle (e.g. reassigning a ticket that's already in progress).
+if is_staff:
+    st.markdown("#### Assign")
+    try:
+        engineers_result = api_client.list_users(
+            token, role="engineer", is_active=True, page_size=100
+        )
+        engineers = engineers_result.get("items", [])
+    except ValueError as e:
+        engineers = []
+        st.error(f"Could not load engineers: {e}")
+
+    if not engineers:
+        st.caption("No active engineers available to assign.")
+    else:
+        current_assignee_id = ticket["assignee"]["id"] if ticket.get("assignee") else None
+        engineer_ids = [e["id"] for e in engineers]
+        default_index = (
+            engineer_ids.index(current_assignee_id)
+            if current_assignee_id in engineer_ids
+            else 0
+        )
+
+        col_pick, col_go = st.columns([3, 1])
+        with col_pick:
+            chosen_id = st.selectbox(
+                "Engineer",
+                options=engineer_ids,
+                index=default_index,
+                format_func=lambda uid: next(e["full_name"] for e in engineers if e["id"] == uid),
+                label_visibility="collapsed",
+            )
+        with col_go:
+            if st.button("Assign", use_container_width=True):
+                try:
+                    api_client.assign_ticket(token, ticket_id, chosen_id)
+                    st.success("Ticket assigned.")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+
+    st.divider()
+
 # ── Lifecycle actions ──────────────────────────────────────────────────────────
 # Visibility mirrors backend RBAC exactly (see module docstring above) so a
 # button never appears only to be rejected by the API.
-is_staff = role in ("engineer", "admin")
-is_reporter = ticket["reporter"]["id"] == user.get("id")
 
 can_resolve = is_staff and status in ("in_progress", "reopened")
 can_close = is_staff and status == "resolved"

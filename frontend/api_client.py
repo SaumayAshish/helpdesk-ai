@@ -230,3 +230,54 @@ def get_engineer_stats(token: str) -> list:
         timeout=TIMEOUT,
     )
     return _handle(response)
+
+
+# =====================================================
+# Users
+# =====================================================
+
+
+def list_users(
+    token: str,
+    page: int = 1,
+    page_size: int = 20,
+    role: str | None = None,
+    department_id: int | None = None,
+    is_active: bool | None = None,
+) -> dict:
+    """GET /users — paginated, filterable roster. Engineer/admin only."""
+    params: dict[str, Any] = {"page": page, "page_size": page_size}
+    if role:
+        params["role"] = role
+    if department_id:
+        params["department_id"] = department_id
+    if is_active is not None:
+        params["is_active"] = is_active
+
+    response = requests.get(
+        f"{BASE_URL}/users",
+        headers=_headers(token),
+        params=params,
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+def deactivate_user(token: str, user_id: int) -> dict:
+    """POST /users/{user_id}/deactivate. Admin only."""
+    response = requests.post(
+        f"{BASE_URL}/users/{user_id}/deactivate",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+def activate_user(token: str, user_id: int) -> dict:
+    """POST /users/{user_id}/activate. Admin only."""
+    response = requests.post(
+        f"{BASE_URL}/users/{user_id}/activate",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle(response)

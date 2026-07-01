@@ -63,7 +63,8 @@ st.divider()
 # reachable, but renders "Access denied" for the wrong role. These home-page
 # cards are real navigation, not just static blurbs, so they use st.button +
 # st.switch_page instead of st.info.
-col1, col2, col3 = st.columns(3)
+nav_cols = st.columns(4 if role == "admin" else 3)
+col1, col2, col3 = nav_cols[0], nav_cols[1], nav_cols[2]
 
 with col1:
     st.markdown("📋 **Tickets**")
@@ -86,3 +87,10 @@ with col3:
     else:
         st.markdown("💬 **Comments**")
         st.caption("Open any ticket to add updates or comments")
+
+if role == "admin":
+    with nav_cols[3]:
+        st.markdown("👥 **Users**")
+        st.caption("Manage accounts and access")
+        if st.button("Manage Users", use_container_width=True, key="nav_users"):
+            st.switch_page("pages/5_Admin_Users.py")
