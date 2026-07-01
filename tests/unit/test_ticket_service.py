@@ -147,6 +147,37 @@ class TestResolveTicket:
         with pytest.raises(ForbiddenException, match="Only engineers and admins"):
             service.resolve_ticket(1, employee_user)
 
+    def test_resolving_after_due_date_sets_sla_breached(self, engineer_user, in_progress_ticket):
+        from datetime import datetime, timedelta, timezone
+
+        service = make_service()
+        in_progress_ticket.sla_due_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        service.ticket_repo.get_by_id.return_value = in_progress_ticket
+
+        service.resolve_ticket(1, engineer_user)
+
+        assert in_progress_ticket.sla_breached is True
+
+    def test_resolving_before_due_date_does_not_breach(self, engineer_user, in_progress_ticket):
+        from datetime import datetime, timedelta, timezone
+
+        service = make_service()
+        in_progress_ticket.sla_due_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        service.ticket_repo.get_by_id.return_value = in_progress_ticket
+
+        service.resolve_ticket(1, engineer_user)
+
+        assert in_progress_ticket.sla_breached is False
+
+    def test_resolving_with_no_due_date_does_not_breach(self, engineer_user, in_progress_ticket):
+        service = make_service()
+        in_progress_ticket.sla_due_at = None  # no matching SlaPolicy at creation time
+        service.ticket_repo.get_by_id.return_value = in_progress_ticket
+
+        service.resolve_ticket(1, engineer_user)
+
+        assert in_progress_ticket.sla_breached is False
+
 
 # =====================================================
 # Tests — close_ticket (state machine)

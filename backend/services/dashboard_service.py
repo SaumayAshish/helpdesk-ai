@@ -89,12 +89,33 @@ class DashboardService:
     def get_sla_stats(self) -> list[dict]:
         """
         SLA breach rate per department.
+
+        "Breached" counts two cases:
+        1. Ticket.sla_breached is True — set by TicketService.resolve_ticket()
+           when a ticket was resolved after its due date.
+        2. The ticket is still open/in-progress and its due date has already
+           passed — a real breach even though nothing has resolved it yet.
+        Without case 2, a department with many overdue-but-unresolved
+        tickets would misleadingly show 0% breach rate until someone
+        finally resolves them.
         """
+        currently_overdue = and_(
+            Ticket.resolved_at.is_(None),
+            Ticket.sla_due_at.isnot(None),
+            Ticket.sla_due_at < func.now(),
+            Ticket.status != TicketStatus.CLOSED,
+        )
+        is_breached = case(
+            (Ticket.sla_breached == True, 1),
+            (currently_overdue, 1),
+            else_=0,
+        )
+
         rows = self.db.execute(
             select(
                 Department.name.label("department"),
                 func.count(Ticket.id).label("total"),
-                func.sum(case((Ticket.sla_breached == True, 1), else_=0)).label("breached"),
+                func.sum(is_breached).label("breached"),
             )
             .join(Department, Ticket.department_id == Department.id)
             .group_by(Department.name)
@@ -107,6 +128,40 @@ class DashboardService:
                 "total_tickets": row.total,
                 "breached": int(row.breached),
                 "breach_rate": round(row.breached / row.total * 100, 1) if row.total else 0,
+            }
+            for row in rows
+        ]
+
+    # =====================================================
+    # Ticket volume heatmap — day of week x hour of day
+    # =====================================================
+
+    def get_heatmap_data(self) -> list[dict]:
+        """
+        Ticket counts grouped by day-of-week and hour-of-day.
+
+        Answers "when do tickets actually come in?" — a staffing question
+        the monthly trend chart can't answer (that's volume over months,
+        this is volume within a week). Postgres EXTRACT(DOW ...) returns
+        0=Sunday through 6=Saturday; the frontend maps that to labels.
+
+        Only day/hour combinations that have at least one ticket are
+        returned — the frontend fills in the zero cells when it builds
+        the 7x24 grid, so a sparse result set here is expected and fine.
+        """
+        rows = self.db.execute(
+            select(
+                func.extract("dow", Ticket.created_at).label("day_of_week"),
+                func.extract("hour", Ticket.created_at).label("hour"),
+                func.count(Ticket.id).label("count"),
+            ).group_by("day_of_week", "hour")
+        ).all()
+
+        return [
+            {
+                "day_of_week": int(row.day_of_week),
+                "hour": int(row.hour),
+                "count": row.count,
             }
             for row in rows
         ]

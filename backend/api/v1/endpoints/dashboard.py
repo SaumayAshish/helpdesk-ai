@@ -66,6 +66,22 @@ def get_sla_stats(
 
 
 # =====================================================
+# GET /dashboard/heatmap
+# =====================================================
+@router.get(
+    "/heatmap",
+    summary="Ticket volume heatmap (day of week x hour)",
+    description="Ticket counts grouped by day-of-week and hour-of-day, "
+    "for staffing/coverage planning. Engineers and admins only.",
+    dependencies=[Depends(require_roles("engineer", "admin"))],
+)
+def get_heatmap(
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    return service.get_heatmap_data()
+
+
+# =====================================================
 # GET /dashboard/engineers
 # =====================================================
 @router.get(

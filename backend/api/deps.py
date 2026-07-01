@@ -16,6 +16,7 @@ from backend.core.exceptions import ForbiddenException
 from backend.models.user import User
 from backend.services.auth_service import AuthService
 from backend.services.comment_service import CommentService
+from backend.services.sla_policy_service import SlaPolicyService
 from backend.services.ticket_service import TicketService
 from backend.services.user_service import UserService
 
@@ -94,3 +95,8 @@ def get_comment_service(db: Session = Depends(get_db)) -> CommentService:
 def get_user_service(db: Session = Depends(get_db)) -> UserService:
     """Inject a UserService bound to the request's DB session."""
     return UserService(db)
+
+
+def get_sla_policy_service(db: Session = Depends(get_db)) -> SlaPolicyService:
+    """Inject an SlaPolicyService bound to the request's DB session."""
+    return SlaPolicyService(db)

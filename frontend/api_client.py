@@ -232,6 +232,16 @@ def get_engineer_stats(token: str) -> list:
     return _handle(response)
 
 
+def get_heatmap_data(token: str) -> list:
+    """GET /dashboard/heatmap — ticket counts by day-of-week x hour."""
+    response = requests.get(
+        f"{BASE_URL}/dashboard/heatmap",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
 # =====================================================
 # Users
 # =====================================================
@@ -278,6 +288,32 @@ def activate_user(token: str, user_id: int) -> dict:
     response = requests.post(
         f"{BASE_URL}/users/{user_id}/activate",
         headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+# =====================================================
+# SLA Policies
+# =====================================================
+
+
+def get_sla_policies(token: str) -> list:
+    """GET /sla-policies. Engineer/admin only."""
+    response = requests.get(
+        f"{BASE_URL}/sla-policies",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+def update_sla_policy(token: str, policy_id: int, payload: dict) -> dict:
+    """PATCH /sla-policies/{policy_id}. Admin only."""
+    response = requests.patch(
+        f"{BASE_URL}/sla-policies/{policy_id}",
+        headers=_headers(token),
+        json=payload,
         timeout=TIMEOUT,
     )
     return _handle(response)

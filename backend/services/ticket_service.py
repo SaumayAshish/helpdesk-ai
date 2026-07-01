@@ -7,13 +7,14 @@ The route layer calls this service — never the repository directly.
 """
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from backend.core.exceptions import ForbiddenException, NotFoundException
 from backend.models.department import Department
+from backend.models.sla_policy import SlaPolicy
 from backend.models.ticket import Ticket, TicketPriority, TicketStatus
 from backend.models.user import User
 from backend.repositories.ticket_repository import TicketRepository
@@ -138,16 +139,21 @@ class TicketService:
             # Never let ML failure block ticket creation
             logger.error(f"ML prediction failed for ticket_id={ticket.id}: {e}")
 
-        self.ticket_repo.commit()
-        self.db.refresh(ticket)
-
-        logger.info(
-            f"Ticket created: id={ticket.id} "
-            f"reporter_id={reporter.id} "
-            f"priority={ticket.priority}"
+        # -----------------------------------------------
+        # SLA due date — based on the ticket's actual priority
+        # (the reporter's/default choice), not the ML-predicted one.
+        # sla_due_at is what resolve_ticket() checks to set sla_breached.
+        # -----------------------------------------------
+        policy = (
+            self.db.query(SlaPolicy)
+            .filter(SlaPolicy.priority == ticket.priority.value)
+            .first()
         )
-        return ticket
-        ticket.ticket_number = f"TKT-{datetime.now().year}-{ticket.id:05d}"
+        if policy:
+            ticket.sla_due_at = ticket.created_at + timedelta(hours=policy.resolution_time_hours)
+        else:
+            logger.warning(f"No SLA policy found for priority={ticket.priority.value}")
+
         self.ticket_repo.commit()
         self.db.refresh(ticket)
 
@@ -388,10 +394,15 @@ class TicketService:
         ticket.status = TicketStatus.RESOLVED
         ticket.resolved_at = datetime.now(timezone.utc)
 
+        # Compare against the due date set at creation time (see create_ticket).
+        # sla_due_at can be None if no SlaPolicy existed for the priority —
+        # in that case there is nothing to breach against.
+        if ticket.sla_due_at and ticket.resolved_at > ticket.sla_due_at:
+            ticket.sla_breached = True
+            logger.warning(f"SLA breached: ticket_id={ticket.id} resolved after due date")
+
         self.ticket_repo.commit()
         self.db.refresh(ticket)
 
         logger.info(f"Ticket resolved: id={ticket.id} by user_id={user.id}")
         return ticket
-
-    # =====================================================

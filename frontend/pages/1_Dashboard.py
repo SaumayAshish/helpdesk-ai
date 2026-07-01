@@ -13,6 +13,7 @@ if str(_project_root) not in sys.path:
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from frontend.components.auth import get_role, get_user, logout, require_login
@@ -49,6 +50,7 @@ with st.spinner("Loading dashboard data..."):
         summary    = api_client.get_dashboard_summary(token)
         trends     = api_client.get_dashboard_trends(token)
         sla_stats  = api_client.get_sla_stats(token)
+        heatmap    = api_client.get_heatmap_data(token)
         engineers  = api_client.get_engineer_stats(token)
         load_error = None
     except ValueError as e:
@@ -107,7 +109,10 @@ st.subheader("SLA Breach Rate by Department")
 
 if sla_stats:
     df_sla = pd.DataFrame(sla_stats)
-    df_sla["breach_pct"] = (df_sla["breach_rate"].astype(float) * 100).round(1)
+    # breach_rate already arrives as a percentage (0-100) from the backend —
+    # DashboardService.get_sla_stats() computes round(breached/total*100, 1).
+    # Re-multiplying by 100 here was a bug (would show e.g. 5000% instead of 50%).
+    df_sla["breach_pct"] = df_sla["breach_rate"].astype(float)
 
     fig2 = px.bar(
         df_sla,
@@ -130,7 +135,47 @@ else:
 
 st.divider()
 
-# ── Section 4: Engineer performance table ─────────────────────────────────────
+# ── Section 4: Ticket volume heatmap (day of week x hour) ─────────────────────
+# Answers a staffing question the monthly trend chart can't: WHEN during the
+# week do tickets actually arrive? Backend only returns non-zero cells, so
+# we build a dense 7x24 grid here and fill the gaps with 0 before plotting —
+# otherwise missing combinations would just be absent from the chart instead
+# of showing as "no tickets at this hour."
+st.subheader("Ticket Volume Heatmap (Day of Week x Hour)")
+
+DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+if heatmap:
+    df_heat = pd.DataFrame(heatmap)
+    pivot = (
+        df_heat.pivot_table(
+            index="day_of_week", columns="hour", values="count", fill_value=0
+        )
+        .reindex(index=range(7), columns=range(24), fill_value=0)
+    )
+
+    fig3 = go.Figure(
+        data=go.Heatmap(
+            z=pivot.values,
+            x=list(pivot.columns),
+            y=[DAY_LABELS[d] for d in pivot.index],
+            colorscale="YlOrRd",
+            colorbar=dict(title="Tickets"),
+        )
+    )
+    fig3.update_layout(
+        xaxis_title="Hour of Day",
+        yaxis_title="Day of Week",
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+else:
+    st.info("No ticket volume data available yet.")
+
+st.divider()
+
+# ── Section 5: Engineer performance table ─────────────────────────────────────
 st.subheader("Engineer Performance")
 
 if engineers:

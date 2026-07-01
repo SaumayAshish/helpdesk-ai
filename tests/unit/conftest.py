@@ -92,6 +92,8 @@ def open_ticket(employee_user) -> Ticket:
     ticket.assigned_to_id = None
     ticket.resolved_at = None
     ticket.closed_at = None
+    ticket.sla_due_at = None
+    ticket.sla_breached = False
     return ticket
 
 
