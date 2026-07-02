@@ -41,6 +41,7 @@ os.environ["DB_PASSWORD"] = "test_password"
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum  # noqa: E402
 from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
@@ -68,6 +69,7 @@ def test_engine():
     """
     engine = create_engine(TEST_DATABASE_URL, future=True)
 
+    _create_enum_types(engine)
     Base.metadata.create_all(engine)
     _seed_reference_data(engine)
 
@@ -75,6 +77,44 @@ def test_engine():
 
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+def _create_enum_types(engine) -> None:
+    """
+    Explicitly create the Postgres ENUM types that Ticket.status,
+    Ticket.priority, and SlaPolicy.priority reference.
+
+    Those columns are declared with create_type=False (see
+    backend/models/ticket.py, backend/models/sla_policy.py) — that flag
+    tells SQLAlchemy "assume this type already exists, created by an
+    Alembic migration; don't try to CREATE or DROP it yourself." That's
+    the right call for the real app (multiple tables share the same
+    enum type name, and letting more than one Enum() column try to
+    create it would conflict), but it means Base.metadata.create_all()
+    alone can never bootstrap a genuinely fresh test database — it'll
+    fail with `type "ticket_status" does not exist` the first time
+    CREATE TABLE tickets runs. Using PGEnum(...).create(engine,
+    checkfirst=True) here does what create_type=False deliberately
+    doesn't: create the type if missing, and do nothing if it's already
+    there (safe to call on every test run).
+    """
+    ticket_status = PGEnum(
+        "open",
+        "in_progress",
+        "resolved",
+        "closed",
+        "reopened",
+        name="ticket_status",
+    )
+    ticket_priority = PGEnum(
+        "low",
+        "medium",
+        "high",
+        "critical",
+        name="ticket_priority",
+    )
+    ticket_status.create(bind=engine, checkfirst=True)
+    ticket_priority.create(bind=engine, checkfirst=True)
 
 
 def _seed_reference_data(engine) -> None:
