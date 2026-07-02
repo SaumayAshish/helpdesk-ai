@@ -48,6 +48,24 @@ def _handle(response: requests.Response) -> Any:
         raise ValueError(f"[{response.status_code}] {detail}")
 
 
+def _handle_binary(response: requests.Response) -> bytes:
+    """
+    Same error handling as _handle(), but for endpoints that return a raw
+    file (report exports) instead of JSON. Calling response.json() on a
+    PDF/xlsx body would crash, so this is a separate path rather than a
+    branch inside _handle().
+    """
+    try:
+        response.raise_for_status()
+        return response.content
+    except requests.HTTPError:
+        try:
+            detail = response.json().get("detail", response.text)
+        except Exception:
+            detail = response.text
+        raise ValueError(f"[{response.status_code}] {detail}")
+
+
 # =====================================================
 # Auth
 # =====================================================
@@ -317,3 +335,54 @@ def update_sla_policy(token: str, policy_id: int, payload: dict) -> dict:
         timeout=TIMEOUT,
     )
     return _handle(response)
+
+
+# =====================================================
+# Reports
+# =====================================================
+
+_REPORT_ENDPOINTS = {
+    "csv": "csv",
+    "excel": "excel",
+    "pdf": "pdf",
+}
+
+
+def export_tickets_report(
+    token: str,
+    fmt: str,
+    status: str | None = None,
+    priority: str | None = None,
+    department_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> bytes:
+    """
+    GET /reports/tickets/{csv,excel,pdf} — returns raw file bytes.
+
+    fmt must be one of "csv", "excel", "pdf". date_from/date_to are
+    ISO date strings ("YYYY-MM-DD") — Streamlit's st.date_input gives
+    a date object, so callers should str() it first.
+    """
+    if fmt not in _REPORT_ENDPOINTS:
+        raise ValueError(f"Unknown report format: {fmt!r}. Expected one of {list(_REPORT_ENDPOINTS)}.")
+
+    params: dict[str, Any] = {}
+    if status:
+        params["status"] = status
+    if priority:
+        params["priority"] = priority
+    if department_id:
+        params["department_id"] = department_id
+    if date_from:
+        params["date_from"] = date_from
+    if date_to:
+        params["date_to"] = date_to
+
+    response = requests.get(
+        f"{BASE_URL}/reports/tickets/{_REPORT_ENDPOINTS[fmt]}",
+        headers=_headers(token),
+        params=params,
+        timeout=TIMEOUT,
+    )
+    return _handle_binary(response)

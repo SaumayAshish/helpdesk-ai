@@ -34,7 +34,21 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.12
 email-validator==2.2.0
 
+# ============================================
+# Python Libraries
+# ============================================
+
 scikit-learn==1.4.2
 joblib==1.4.2
 numpy==1.26.4
 pandas==2.2.2
+
+streamlit==1.35.0
+requests==2.32.3
+plotly==5.22.0
+
+# ============================================
+# Reports (Milestone 9) — Excel and PDF export
+# ============================================
+openpyxl==3.1.5
+reportlab==4.2.5

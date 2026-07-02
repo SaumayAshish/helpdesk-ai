@@ -5,6 +5,8 @@ All queries against the tickets table are defined here.
 The service layer calls these methods — it never writes SQLAlchemy directly.
 """
 
+from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -45,12 +47,18 @@ class TicketRepository(BaseRepository[Ticket]):
         department_id: int | None,
         assignee_id: int | None,
         reporter_id: int | None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ):
         """
         Conditionally append WHERE clauses.
 
         Only filters that are not None are applied —
         this supports any combination of filter parameters.
+
+        date_from/date_to were added for report generation (Milestone 9) —
+        added as trailing optional params so existing positional calls from
+        get_paginated()/count() keep working unchanged.
         """
         if status is not None:
             stmt = stmt.where(Ticket.status == status)
@@ -62,6 +70,10 @@ class TicketRepository(BaseRepository[Ticket]):
             stmt = stmt.where(Ticket.assigned_to_id == assignee_id)
         if reporter_id is not None:
             stmt = stmt.where(Ticket.created_by_id == reporter_id)
+        if date_from is not None:
+            stmt = stmt.where(func.date(Ticket.created_at) >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(func.date(Ticket.created_at) <= date_to)
         return stmt
 
     # =====================================================
@@ -132,6 +144,38 @@ class TicketRepository(BaseRepository[Ticket]):
             reporter_id,
         )
         return self.db.scalar(stmt) or 0
+
+    def get_all_filtered(
+        self,
+        status: TicketStatus | None = None,
+        priority: TicketPriority | None = None,
+        department_id: int | None = None,
+        assignee_id: int | None = None,
+        reporter_id: int | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Ticket]:
+        """
+        Return every matching ticket, unpaginated — for report generation.
+
+        Deliberately separate from get_paginated(): a report needs the
+        complete result set to export, not one page of it. No hard cap is
+        applied here; ReportService is expected to be used by staff on a
+        single organization's ticket volume, not at a scale where this
+        would be a memory concern.
+        """
+        stmt = self._apply_filters(
+            self._base_query(),
+            status,
+            priority,
+            department_id,
+            assignee_id,
+            reporter_id,
+            date_from,
+            date_to,
+        )
+        stmt = stmt.order_by(Ticket.created_at.desc())
+        return list(self.db.scalars(stmt).unique().all())
 
     def soft_delete(self, ticket: Ticket) -> None:
         """
