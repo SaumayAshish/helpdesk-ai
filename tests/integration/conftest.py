@@ -54,8 +54,15 @@ from backend.api.deps import get_db  # noqa: E402
 from backend.core.database import Base  # noqa: E402
 from backend.core.rate_limit import limiter  # noqa: E402
 from backend.main import create_app  # noqa: E402
+from backend.core.security import hash_password  # noqa: E402
 from backend.models.department import Department  # noqa: E402
 from backend.models.role import Role  # noqa: E402
+from backend.models.user import User  # noqa: E402
+
+# Shared password for every user created via create_active_user() below —
+# fine for test fixtures where the point is exercising RBAC/lifecycle
+# logic, not password security itself.
+TEST_PASSWORD = "TestPass123!"
 
 
 @pytest.fixture(scope="session")
@@ -223,3 +230,64 @@ def client(db_session) -> Generator[TestClient, None, None]:
         yield test_client
 
     app.dependency_overrides.clear()
+
+
+# =====================================================
+# Shared test helpers
+# =====================================================
+# Plain functions, not fixtures — every integration test file that needs
+# to provision a non-employee user or authenticate does the same three
+# things, so they live here once instead of being copy-pasted per file.
+
+
+def create_active_user(db_session, role_name: str, email: str, username: str) -> User:
+    """
+    Provision a user directly against the test database session.
+
+    There's no public "create an engineer/admin account" endpoint by
+    design (see backend/api/v1/endpoints/users.py — only list/activate/
+    deactivate are exposed). Real deployments provision those via
+    database/seeds/*.sql or an admin UI. This does the same thing
+    directly against the session so tests can get an engineer/admin
+    token without a self-service registration path that doesn't exist.
+    """
+    role = db_session.query(Role).filter(Role.name == role_name).one()
+    user = User(
+        email=email,
+        username=username,
+        password_hash=hash_password(TEST_PASSWORD),
+        full_name=username.replace("_", " ").title(),
+        role_id=role.id,
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+    return user
+
+
+def login(client, email: str) -> str:
+    """POST /auth/login for a user created via register() or create_active_user(), return its access token."""
+    response = client.post(
+        "/api/v1/auth/login",
+        data={"username": email, "password": TEST_PASSWORD},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
+
+
+def auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def register(client, email: str, username: str, full_name: str) -> None:
+    """POST /auth/register with the shared TEST_PASSWORD — always creates an 'employee'."""
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "username": username,
+            "password": TEST_PASSWORD,
+            "full_name": full_name,
+        },
+    )
+    assert response.status_code == 201, response.text

@@ -88,9 +88,21 @@ class Ticket(Base, TimestampMixin):
     sla_policy_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Timestamps
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # timezone=True matters here, not just for consistency with created_at/
+    # updated_at below: TicketService always works in timezone-aware UTC
+    # (datetime.now(timezone.utc) for resolved_at/closed_at, created_at +
+    # timedelta for sla_due_at). A plain DateTime column stores those aware
+    # values but hands back NAIVE ones on the next read — session.refresh()
+    # or any fresh query — because the underlying Postgres column is
+    # TIMESTAMP WITHOUT TIME ZONE. The instant app code compares that
+    # freshly-read naive value against a still-aware one (exactly what
+    # resolve_ticket() does: ticket.resolved_at > ticket.sla_due_at), Python
+    # raises TypeError: can't compare offset-naive and offset-aware
+    # datetimes. Declaring timezone=True makes the column TIMESTAMPTZ, so
+    # every round trip through Postgres comes back aware.
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # SLA tracking
     sla_breached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
