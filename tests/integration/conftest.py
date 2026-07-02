@@ -40,7 +40,8 @@ os.environ["DB_PASSWORD"] = "test_password"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 # Import backend.models BEFORE anything touches Base.metadata — this is
@@ -52,6 +53,8 @@ from backend.api.deps import get_db  # noqa: E402
 from backend.core.database import Base  # noqa: E402
 from backend.core.rate_limit import limiter  # noqa: E402
 from backend.main import create_app  # noqa: E402
+from backend.models.department import Department  # noqa: E402
+from backend.models.role import Role  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -81,28 +84,45 @@ def _seed_reference_data(engine) -> None:
     on these foreign keys existing. Kept minimal and idempotent
     (ON CONFLICT DO NOTHING) so re-running against an already-seeded
     database is harmless.
+
+    Uses SQLAlchemy Core insert() against the mapped Table objects
+    rather than raw SQL text. This is not just style — Role.created_at
+    and Department.created_at/updated_at are defined as Python-side
+    defaults (`mapped_column(default=datetime.utcnow)`), which only
+    fire when SQLAlchemy itself builds the INSERT. A raw `INSERT INTO
+    roles (name, description) VALUES (...)` bypasses that entirely and
+    Postgres has no server-side DEFAULT on the column, so it happily
+    tries to insert NULL into a NOT NULL column — this is exactly the
+    bug that showed up as `NotNullViolation: null value in column
+    "created_at"` the first time this ran against a real Postgres.
     """
     with engine.begin() as conn:
         conn.execute(
-            text(
-                """
-                INSERT INTO roles (name, description) VALUES
-                    ('admin', 'Full system access'),
-                    ('engineer', 'Resolves tickets within assigned department'),
-                    ('employee', 'Raises tickets and tracks their progress')
-                ON CONFLICT (name) DO NOTHING
-                """
+            pg_insert(Role.__table__)
+            .values(
+                [
+                    {"name": "admin", "description": "Full system access"},
+                    {
+                        "name": "engineer",
+                        "description": "Resolves tickets within assigned department",
+                    },
+                    {
+                        "name": "employee",
+                        "description": "Raises tickets and tracks their progress",
+                    },
+                ]
             )
+            .on_conflict_do_nothing(index_elements=["name"])
         )
         conn.execute(
-            text(
-                """
-                INSERT INTO departments (name, description) VALUES
-                    ('IT Support', 'Hardware, OS, general IT issues'),
-                    ('Network', 'Connectivity, VPN, firewall, Wi-Fi')
-                ON CONFLICT (name) DO NOTHING
-                """
+            pg_insert(Department.__table__)
+            .values(
+                [
+                    {"name": "IT Support", "description": "Hardware, OS, general IT issues"},
+                    {"name": "Network", "description": "Connectivity, VPN, firewall, Wi-Fi"},
+                ]
             )
+            .on_conflict_do_nothing(index_elements=["name"])
         )
 
 
