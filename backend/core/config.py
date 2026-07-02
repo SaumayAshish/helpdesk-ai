@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     LOG_FILE_PATH: str = "logs/app.log"
 
     # =====================================================
+    # Rate limiting (Milestone 10) — brute-force protection
+    # =====================================================
+    # Strings use slowapi/limits syntax: "<count>/<period>"
+    # (period is one of second, minute, hour, day).
+    RATE_LIMIT_LOGIN: str = "5/minute"
+    RATE_LIMIT_REGISTER: str = "3/minute"
+
+    # =====================================================
     # CORS
     # =====================================================
     FRONTEND_URL: str = "http://localhost:8501"

@@ -2,10 +2,12 @@
 Authentication endpoints: register, login, refresh, me, change-password.
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from backend.api.deps import get_auth_service, get_current_active_user
+from backend.core.config import settings
+from backend.core.rate_limit import limiter
 from backend.models.user import User
 from backend.schemas.token import RefreshTokenRequest, TokenResponse
 from backend.schemas.user import (
@@ -26,9 +28,12 @@ router = APIRouter()
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
-    description="Creates a new account with the default 'employee' role.",
+    description="Creates a new account with the default 'employee' role. "
+    f"Rate limited to {settings.RATE_LIMIT_REGISTER} per client IP.",
 )
+@limiter.limit(settings.RATE_LIMIT_REGISTER)
 def register(
+    request: Request,
     payload: UserRegister,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
@@ -46,10 +51,14 @@ def register(
     description=(
         "OAuth2-compatible login endpoint. "
         "Submit form fields: `username` (use email) and `password`. "
-        "Returns an access token and a refresh token."
+        "Returns an access token and a refresh token. "
+        f"Rate limited to {settings.RATE_LIMIT_LOGIN} per client IP to slow "
+        "down credential-stuffing / brute-force attempts."
     ),
 )
+@limiter.limit(settings.RATE_LIMIT_LOGIN)
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:

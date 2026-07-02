@@ -16,6 +16,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # ⭐ CRITICAL: Force-import all models so SQLAlchemy registers them
 import backend.models  # noqa: F401
@@ -24,6 +26,7 @@ from backend.core.config import settings
 from backend.core.exceptions import AppException
 from backend.core.logging_config import setup_logging
 from backend.core.middleware import RequestIDMiddleware
+from backend.core.rate_limit import limiter
 
 
 # =====================================================
@@ -72,6 +75,16 @@ def create_app() -> FastAPI:
         debug=settings.APP_DEBUG,
         lifespan=lifespan,
     )
+
+    # -----------------------------------------------
+    # Rate limiting: attach the shared Limiter to app.state
+    # -----------------------------------------------
+    # slowapi's @limiter.limit(...) decorator (used on individual routes
+    # in backend/api/v1/endpoints/auth.py) looks up the limiter via
+    # request.app.state.limiter at call time — it has to be registered
+    # here before any request comes in.
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
 
     # -----------------------------------------------
     # Middleware: CORS
@@ -145,6 +158,32 @@ def create_app() -> FastAPI:
             content={
                 "detail": exc.errors(),
                 "error_code": "VALIDATION_ERROR",
+                "request_id": request_id,
+            },
+        )
+
+    # -----------------------------------------------
+    # Exception handler: rate limit exceeded
+    # -----------------------------------------------
+    # slowapi ships its own default handler (_rate_limit_exceeded_handler)
+    # that returns a plain-text 429. Overriding it here keeps the error
+    # response shape consistent with every other error in this API
+    # (detail/error_code/request_id) instead of a client having to special-
+    # case one endpoint's error format.
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exceeded_handler(
+        request: Request, exc: RateLimitExceeded
+    ) -> JSONResponse:
+        request_id = getattr(request.state, "request_id", None)
+        logger.warning(
+            f"Rate limit exceeded on {request.method} {request.url.path} "
+            f"from {request.client.host if request.client else 'unknown'}: {exc.detail}"
+        )
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "detail": f"Rate limit exceeded: {exc.detail}",
+                "error_code": "RATE_LIMIT_EXCEEDED",
                 "request_id": request_id,
             },
         )
