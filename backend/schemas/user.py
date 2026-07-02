@@ -58,7 +58,7 @@ class UserResponse(BaseModel):
     """User info returned to clients — NEVER includes password_hash."""
 
     id: int
-    email: EmailStr
+    email: str  # str not EmailStr — response schemas don't re-validate stored data
     username: str
     full_name: str
     role: str  # role.name (e.g., "admin")

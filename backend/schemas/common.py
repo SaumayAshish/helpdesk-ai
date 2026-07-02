@@ -22,11 +22,21 @@ class HealthCheckResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Standardized error response."""
+    """
+    Standardized error response — every error the API returns (4xx or 5xx)
+    is shaped like this. See backend/main.py's exception handlers, which
+    are what actually populate error_code and request_id; raising an
+    AppException elsewhere in the codebase only needs to set `detail`.
+    """
 
     detail: str
     error_code: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    request_id: str | None = Field(
+        default=None,
+        description="Correlates this error with server log lines — "
+        "also returned as the X-Request-ID response header.",
+    )
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
