@@ -9,6 +9,7 @@ from backend.api.deps import get_auth_service, get_current_active_user
 from backend.core.config import settings
 from backend.core.rate_limit import limiter
 from backend.models.user import User
+from backend.schemas.auth import ForgotPasswordRequest, ResetPasswordRequest
 from backend.schemas.token import RefreshTokenRequest, TokenResponse
 from backend.schemas.user import (
     PasswordChangeRequest,
@@ -119,4 +120,49 @@ def change_password(
         payload.current_password,
         payload.new_password,
     )
+    return None
+
+
+# =====================================================
+# POST /auth/forgot-password
+# =====================================================
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Request a password reset",
+    description=(
+        "Always returns 202 with the same generic message, whether or not "
+        "the email is registered — this prevents attackers from using this "
+        "endpoint to discover valid accounts. If the email exists and is "
+        f"active, a reset link is emailed (valid for "
+        f"{settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES} minutes). "
+        f"Rate limited to {settings.RATE_LIMIT_FORGOT_PASSWORD} per client IP."
+    ),
+)
+@limiter.limit(settings.RATE_LIMIT_FORGOT_PASSWORD)
+def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> dict:
+    auth_service.request_password_reset(payload.email)
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+
+# =====================================================
+# POST /auth/reset-password
+# =====================================================
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Redeem a reset token for a new password",
+    description="Validates the token from the forgot-password email and sets a new password. "
+    "The token is single-use and expires after "
+    f"{settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES} minutes.",
+)
+def reset_password(
+    payload: ResetPasswordRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> None:
+    auth_service.reset_password(payload.token, payload.new_password)
     return None

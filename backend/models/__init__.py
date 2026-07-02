@@ -9,6 +9,7 @@ from backend.models.attachment import Attachment
 from backend.models.base import Base
 from backend.models.comment import Comment
 from backend.models.department import Department
+from backend.models.password_reset_token import PasswordResetToken
 from backend.models.role import Role
 from backend.models.sla_policy import SlaPolicy
 from backend.models.ticket import Ticket, TicketPriority, TicketStatus
@@ -27,4 +28,5 @@ __all__ = [
     "Attachment",
     "SlaPolicy",
     "TicketHistory",
+    "PasswordResetToken",
 ]

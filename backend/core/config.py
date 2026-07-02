@@ -78,6 +78,25 @@ class Settings(BaseSettings):
     # (period is one of second, minute, hour, day).
     RATE_LIMIT_LOGIN: str = "5/minute"
     RATE_LIMIT_REGISTER: str = "3/minute"
+    RATE_LIMIT_FORGOT_PASSWORD: str = "3/minute"
+
+    # =====================================================
+    # Password reset (Forgot Password flow)
+    # =====================================================
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # =====================================================
+    # Outbound email (SMTP) — see backend/core/email.py
+    # =====================================================
+    # All optional and default to None/unset: if SMTP_HOST is empty,
+    # emails are logged instead of sent (see backend/core/email.py).
+    # This keeps local dev working without any mail server configured.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_TLS: bool = True
 
     # =====================================================
     # CORS
@@ -97,6 +116,43 @@ class Settings(BaseSettings):
     ML_SLA_MODEL: str = "sla_predictor.pkl"
 
     # =====================================================
+    # Ticket attachments
+    # =====================================================
+    # Local disk for now — documented limitation: Render's filesystem is
+    # ephemeral across redeploys, so this will need to move to S3-compatible
+    # object storage before a real production deployment (Milestone 14).
+    # file_path stored in the DB is always relative to this root, never an
+    # absolute path — that's what makes swapping storage backends later a
+    # one-file change (AttachmentService) instead of a data migration.
+    ATTACHMENTS_STORAGE_PATH: str = "uploads/attachments"
+
+    # Must match the DB CHECK constraint in
+    # database/migrations/008_create_attachments_table.sql
+    # (chk_attachments_file_size_max) — kept in sync deliberately so a
+    # too-large upload is always rejected with a clear 422 from the service
+    # layer, not an opaque IntegrityError from the database.
+    ATTACHMENTS_MAX_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+
+    # Allowlist, not a denylist — safer default for arbitrary file upload.
+    # Deliberately excludes anything executable or that a browser might
+    # render/execute (.exe, .sh, .js, .html, .svg — SVG can carry embedded
+    # scripts). Extend this list only for formats you've actually decided
+    # to support, never just to unblock one user's file.
+    ATTACHMENTS_ALLOWED_MIME_TYPES: list[str] = [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "application/pdf",
+        "text/plain",
+        "text/csv",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/zip",
+    ]
+
+    # =====================================================
     # Computed properties
     # =====================================================
     @property
@@ -112,6 +168,13 @@ class Settings(BaseSettings):
         """Ensure log directory exists and return absolute path."""
         path = Path(self.LOG_FILE_PATH)
         path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def attachments_storage_full_path(self) -> Path:
+        """Ensure the attachments root directory exists and return it."""
+        path = Path(self.ATTACHMENTS_STORAGE_PATH)
+        path.mkdir(parents=True, exist_ok=True)
         return path
 
     @field_validator("JWT_SECRET_KEY")

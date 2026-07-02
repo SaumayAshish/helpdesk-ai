@@ -5,10 +5,15 @@ Orchestrates: validation, password hashing, token issuance.
 Endpoints are thin wrappers around this service.
 """
 
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from backend.core.config import settings
+from backend.core.email import send_email
 from backend.core.exceptions import (
     ConflictException,
     NotFoundException,
@@ -23,7 +28,9 @@ from backend.core.security import (
     hash_password,
     verify_password,
 )
+from backend.models.password_reset_token import PasswordResetToken
 from backend.models.user import User
+from backend.repositories.password_reset_token_repository import PasswordResetTokenRepository
 from backend.repositories.user_repository import UserRepository
 from backend.schemas.token import TokenResponse
 from backend.schemas.user import UserRegister
@@ -35,6 +42,7 @@ class AuthService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.user_repo = UserRepository(db)
+        self.reset_token_repo = PasswordResetTokenRepository(db)
 
     # =====================================================
     # Registration
@@ -91,7 +99,7 @@ class AuthService:
         # (prevents timing attacks that reveal which emails exist)
         if not user:
             # Dummy verify to consume similar CPU time
-            verify_password(password, "\$2b$12$" + "x" * 53)
+            verify_password(password, "$2b$12$" + "x" * 53)
             logger.warning(f"Login failed: email not found: {email}")
             raise UnauthorizedException("Invalid email or password")
 
@@ -173,3 +181,89 @@ class AuthService:
         if not user.is_active:
             raise UnauthorizedException("Account is disabled")
         return user
+
+    # =====================================================
+    # Forgot password — step 1: request a reset
+    # =====================================================
+    def request_password_reset(self, email: str) -> None:
+        """
+        Issue a password reset token and email it, if the account exists.
+
+        Deliberately returns None either way — never raises for "email not
+        found" and the endpoint always responds with the same generic
+        message. This mirrors authenticate()'s user-enumeration defense
+        above: an attacker probing which emails are registered shouldn't
+        learn anything from a different response shape or timing here.
+
+        The raw token is generated with `secrets.token_urlsafe`, a
+        cryptographically secure RNG (not `random` — that's predictable
+        enough to matter for anything security-sensitive). Only its
+        SHA-256 hash is persisted; see PasswordResetToken's docstring for
+        why SHA-256 (fast hash) is the right choice here and bcrypt
+        (deliberately slow) would be the wrong one.
+        """
+        user = self.user_repo.get_by_email(email.lower())
+        if not user or not user.is_active:
+            logger.info(f"Password reset requested for unknown/inactive email: {email}")
+            return
+
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+        )
+
+        reset_token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self.reset_token_repo.add(reset_token)
+        self.reset_token_repo.commit()
+
+        reset_link = f"{settings.FRONTEND_URL}?reset_token={raw_token}"
+        send_email(
+            to=user.email,
+            subject="Reset your Helpdesk AI password",
+            body=(
+                f"Hi {user.full_name},\n\n"
+                f"Someone requested a password reset for this account. "
+                f"If this was you, use the link below within "
+                f"{settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES} minutes:\n\n"
+                f"{reset_link}\n\n"
+                f"If you didn't request this, you can safely ignore this email — "
+                f"your password will not be changed."
+            ),
+        )
+        logger.info(f"Password reset token issued for user_id={user.id}")
+
+    # =====================================================
+    # Forgot password — step 2: redeem the token
+    # =====================================================
+    def reset_password(self, raw_token: str, new_password: str) -> None:
+        """
+        Validate a reset token and set the account's new password.
+
+        Raises:
+            UnauthorizedException: If the token is unknown, expired, or
+                already used. Same exception type as bad-login-credentials
+                — a wrong/expired/reused token is an authorization failure,
+                not a "not found" (which would hint whether SOME token
+                existed at that value).
+        """
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        reset_token = self.reset_token_repo.get_by_token_hash(token_hash)
+
+        if not reset_token or not reset_token.is_valid:
+            logger.warning("Password reset attempted with invalid/expired/used token")
+            raise UnauthorizedException("Invalid or expired reset token")
+
+        user = self.user_repo.get_by_id(reset_token.user_id)
+        if not user or not user.is_active:
+            raise UnauthorizedException("Invalid or expired reset token")
+
+        user.password_hash = hash_password(new_password)
+        reset_token.used_at = datetime.now(timezone.utc)
+
+        self.reset_token_repo.commit()
+        logger.info(f"Password reset completed for user_id={user.id}")

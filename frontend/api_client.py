@@ -51,13 +51,25 @@ def _handle(response: requests.Response) -> Any:
 def _handle_binary(response: requests.Response) -> bytes:
     """
     Same error handling as _handle(), but for endpoints that return a raw
-    file (report exports) instead of JSON. Calling response.json() on a
-    PDF/xlsx body would crash, so this is a separate path rather than a
-    branch inside _handle().
+    file (report exports, attachment downloads) instead of JSON. Calling
+    response.json() on a PDF/xlsx/attachment body would crash, so this is
+    a separate path rather than a branch inside _handle().
     """
     try:
         response.raise_for_status()
         return response.content
+    except requests.HTTPError:
+        try:
+            detail = response.json().get("detail", response.text)
+        except Exception:
+            detail = response.text
+        raise ValueError(f"[{response.status_code}] {detail}")
+
+
+def _handle_no_content(response: requests.Response) -> None:
+    """Like _handle(), but for 204 No Content endpoints with no JSON body."""
+    try:
+        response.raise_for_status()
     except requests.HTTPError:
         try:
             detail = response.json().get("detail", response.text)
@@ -92,6 +104,29 @@ def get_current_user(token: str) -> dict:
         timeout=TIMEOUT,
     )
     return _handle(response)
+
+
+def forgot_password(email: str) -> dict:
+    """
+    POST /auth/forgot-password — always returns 202 with a generic message,
+    regardless of whether the email is registered (see backend docstring).
+    """
+    response = requests.post(
+        f"{BASE_URL}/auth/forgot-password",
+        json={"email": email},
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+def reset_password(token: str, new_password: str) -> None:
+    """POST /auth/reset-password — redeems a reset token for a new password."""
+    response = requests.post(
+        f"{BASE_URL}/auth/reset-password",
+        json={"token": token, "new_password": new_password},
+        timeout=TIMEOUT,
+    )
+    _handle_no_content(response)
 
 
 # =====================================================
@@ -203,6 +238,51 @@ def get_comments(token: str, ticket_id: int) -> list:
         timeout=TIMEOUT,
     )
     return _handle(response)
+
+
+# =====================================================
+# Attachments
+# =====================================================
+
+
+def upload_attachment(
+    token: str, ticket_id: int, filename: str, content: bytes, content_type: str
+) -> dict:
+    """
+    POST /tickets/{ticket_id}/attachments — multipart upload.
+
+    Deliberately does NOT set a "Content-Type": "application/json" header
+    (unlike every other write in this module) — `files=` tells requests to
+    build a multipart/form-data body and set its own boundary-aware
+    Content-Type. Passing json= here would silently send the wrong body.
+    """
+    response = requests.post(
+        f"{BASE_URL}/tickets/{ticket_id}/attachments",
+        headers=_headers(token),
+        files={"file": (filename, content, content_type)},
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+def list_attachments(token: str, ticket_id: int) -> list:
+    """GET /tickets/{ticket_id}/attachments."""
+    response = requests.get(
+        f"{BASE_URL}/tickets/{ticket_id}/attachments",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle(response)
+
+
+def download_attachment(token: str, ticket_id: int, attachment_id: int) -> bytes:
+    """GET /tickets/{ticket_id}/attachments/{attachment_id}/download — raw file bytes."""
+    response = requests.get(
+        f"{BASE_URL}/tickets/{ticket_id}/attachments/{attachment_id}/download",
+        headers=_headers(token),
+        timeout=TIMEOUT,
+    )
+    return _handle_binary(response)
 
 
 # =====================================================

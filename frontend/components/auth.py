@@ -27,8 +27,15 @@ def require_login() -> str:
         is_home = caller_file.endswith("app.py")
 
         if is_home:
-            # Login form belongs here — render it and halt.
-            _render_login_form()
+            # A reset link (emailed by /auth/forgot-password) deep-links
+            # here as ?reset_token=... — that takes priority over the
+            # normal login form since the user arrived with a specific
+            # task (set a new password), not to sign in with an existing one.
+            reset_token = st.query_params.get("reset_token")
+            if reset_token:
+                _render_reset_password_form(reset_token)
+            else:
+                _render_login_form()
         else:
             # On any other page, redirect to the home/login page.
             st.warning("Please sign in to continue.")
@@ -86,3 +93,66 @@ def _render_login_form() -> None:
                 st.error(str(e))
             except Exception:
                 st.error("⚠️ Cannot connect to the backend. Make sure the FastAPI server is running on port 8000.")
+
+    with st.expander("Forgot your password?"):
+        _render_forgot_password_form()
+
+
+def _render_forgot_password_form() -> None:
+    """
+    Request a reset link. Always shows the same success message on submit,
+    regardless of whether the email is registered — the backend's response
+    is deliberately generic for the same reason (see AuthService.request_
+    password_reset's docstring), and the frontend shouldn't undo that by
+    branching on the result.
+    """
+    with st.form("forgot_password_form"):
+        email = st.text_input("Email", placeholder="you@company.com", key="forgot_email")
+        submit = st.form_submit_button("Send reset link", use_container_width=True)
+
+    if submit:
+        if not email:
+            st.error("Please enter your email.")
+            return
+        try:
+            api_client.forgot_password(email)
+        except Exception:
+            pass  # network/backend errors shouldn't reveal anything either
+        st.info(
+            "If that email is registered, a reset link has been sent. "
+            "It's valid for a limited time — check your inbox."
+        )
+
+
+def _render_reset_password_form(reset_token: str) -> None:
+    """Render the "set a new password" form reached via an emailed reset link."""
+    st.title("🎫 Helpdesk AI")
+    st.subheader("Choose a new password")
+
+    with st.form("reset_password_form"):
+        new_password = st.text_input("New password", type="password")
+        confirm_password = st.text_input("Confirm new password", type="password")
+        submit = st.form_submit_button("Reset password", use_container_width=True)
+
+    if submit:
+        if not new_password or not confirm_password:
+            st.error("Please fill in both fields.")
+            return
+        if new_password != confirm_password:
+            st.error("Passwords do not match.")
+            return
+
+        with st.spinner("Resetting password..."):
+            try:
+                api_client.reset_password(reset_token, new_password)
+                st.query_params.clear()
+                st.success("Password reset. Please sign in with your new password.")
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+            except Exception:
+                st.error("⚠️ Cannot connect to the backend. Make sure the FastAPI server is running on port 8000.")
+
+    if st.button("Back to sign in"):
+        st.query_params.clear()
+        st.rerun()
